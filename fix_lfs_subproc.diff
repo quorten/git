@@ -1,0 +1,42 @@
+When using Git LFS and ctags as a post-commit hook together,
+git lfs filter-process remains running until the ctags command terminates.
+This causes unnecessary blocking.  The reason for this is due to
+file descriptor inheritance causing an unnecessary pipe wait.
+Git should mark the pipe file descriptors with FD_CLOEXEC after
+starting the LFS process so that the post-checkout hook won't inherit
+them.
+
+Tim Pope's "Effortless Ctags with Git" article.
+
+https://tbaggery.com/2011/08/08/effortless-ctags-with-git.html
+
+diff --git a/run-command.c b/run-command.c
+--- a/run-command.c
++++ b/run-command.c
+@@ -931,18 +931,24 @@ int start_command(struct child_process *cmd)
+                return -1;
+        }
+
+-       if (need_in)
++       if (need_in) {
+                close(fdin[0]);
++               set_cloexec(fdin[1]);
++       }
+        else if (cmd->in)
+                close(cmd->in);
+
+-       if (need_out)
++       if (need_out) {
+                close(fdout[1]);
++               set_cloexec(fdout[0]);
++       }
+        else if (cmd->out)
+                close(cmd->out);
+
+-       if (need_err)
++       if (need_err) {
+                close(fderr[1]);
++               set_cloexec(fderr[0]);
++       }
+        else if (cmd->err)
+                close(cmd->err);
